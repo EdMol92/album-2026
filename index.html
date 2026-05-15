@@ -61,10 +61,8 @@
   .sticker {
     background: #142c5e; border-radius: 10px; padding: 8px 4px;
     text-align: center; cursor: pointer; position: relative;
-    border: 2px solid transparent; transition: all .1s;
-    user-select: none;
+    border: 2px solid transparent; transition: all .15s;
   }
-  .sticker:active { transform: scale(0.92); background: #1c3d7a; }
   .sticker.owned { background: #1a5c3a; border-color: #00d26a; }
   .sticker.foil::before {
     content: "★"; position: absolute; top: 2px; right: 4px;
@@ -96,21 +94,23 @@
   @keyframes slideUp { from { transform: translateY(100%); } }
   .modal h2 { margin: 0 0 4px; font-size: 20px; }
   .modal .sub { opacity: .7; font-size: 13px; margin-bottom: 18px; }
+  .btn-row { display: flex; gap: 8px; margin-bottom: 14px; }
   .btn {
     flex: 1; padding: 14px; border-radius: 10px; border: 0;
     font-size: 15px; font-weight: 600; cursor: pointer;
   }
-  .btn-secondary { background: rgba(255,255,255,0.1); color: #fff; width: 100%; margin-top: 15px; }
+  .btn-primary { background: #00d26a; color: #06173a; }
+  .btn-secondary { background: rgba(255,255,255,.1); color: #fff; }
   .dup-row {
     display: flex; align-items: center; justify-content: space-between;
     background: rgba(0,0,0,.2); padding: 12px; border-radius: 10px;
   }
   .dup-btn {
-    width: 44px; height: 44px; border-radius: 50%; border: 0;
-    background: #00d26a; color: #06173a; font-size: 24px;
+    width: 36px; height: 36px; border-radius: 50%; border: 0;
+    background: #00d26a; color: #06173a; font-size: 20px;
     font-weight: 700; cursor: pointer;
   }
-  .dup-count { font-size: 24px; font-weight: 700; min-width: 40px; text-align: center; }
+  .dup-count { font-size: 22px; font-weight: 700; }
 
   .filter-bar {
     display: flex; gap: 6px; margin-bottom: 10px; overflow-x: auto;
@@ -122,10 +122,12 @@
   }
   .chip.active { background: #00d26a; color: #06173a; }
 
+  .trade-list { margin-top: 10px; }
   .trade-item {
     background: #142c5e; padding: 10px; border-radius: 8px;
     margin-bottom: 6px; display: flex; justify-content: space-between;
   }
+  .empty { text-align: center; padding: 40px 20px; opacity: .6; }
   textarea {
     width: 100%; min-height: 120px; background: #06173a; color: #fff;
     border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 10px;
@@ -157,6 +159,9 @@
 </div>
 
 <script>
+// ============================================================
+// PEGA AQUÍ EL ARRAY "STICKERS" DEL SEGUNDO BLOQUE DE CÓDIGO
+// ============================================================
 const STICKERS = [
   {
     "id": "0",
@@ -7656,7 +7661,7 @@ const STICKERS = [
     "foil": false
   },
   {
-     "id": "FV-g",
+    "id": "FV-g",
     "number": "FV-g",
     "name": "Federico Valverde",
     "section": "Uruguay",
@@ -7664,198 +7669,285 @@ const STICKERS = [
   }
 ];
 
-
-let state = JSON.parse(localStorage.getItem('panini_2026') || '{}');
+// --------- Estado ---------
+const STORAGE_KEY = 'panini2026';
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
 let currentView = 'sections';
 let currentSection = null;
-let pressTimer = null;
-let isLongPress = false;
+let longPressTimer = null;
+let longPressTriggered = false;
 
-function save() { localStorage.setItem('panini_2026', JSON.stringify(state)); }
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function get(id) { return state[id] || { owned: false, dup: 0 }; }
+function set(id, v) { state[id] = v; save(); render(); }
 
-function toggleOwned(id) {
-  if (!state[id]) state[id] = { owned: false, dups: 0 };
-  state[id].owned = !state[id].owned;
-  if (!state[id].owned) state[id].dups = 0;
-  save();
+// --------- Cálculos ---------
+function sectionsList() {
+  const map = {};
+  STICKERS.forEach(s => {
+    if (!map[s.section]) map[s.section] = [];
+    map[s.section].push(s);
+  });
+  return map;
+}
+function stats(items) {
+  let owned = 0, dup = 0;
+  items.forEach(s => { const g = get(s.id); if (g.owned) owned++; dup += g.dup||0; });
+  return { owned, total: items.length, dup };
 }
 
-function updateDup(id, delta) {
-  if (!state[id]) state[id] = { owned: true, dups: 0 };
-  state[id].dups = Math.max(0, (state[id].dups || 0) + delta);
-  save();
-}
+// --------- Render ---------
+function render() {
+  const total = stats(STICKERS);
+  const pct = total.total ? (total.owned/total.total*100) : 0;
+  document.getElementById('totalFill').style.width = pct+'%';
+  document.getElementById('totalText').textContent =
+    `${total.owned} / ${total.total} (${pct.toFixed(1)}%) · ${total.dup} repetidas`;
 
-// --------- Lógica de Gestos ---------
-function startPress(id) {
-  isLongPress = false;
-  pressTimer = setTimeout(() => {
-    isLongPress = true;
-    openLongPressMenu(id);
-  }, 600);
-}
+  const app = document.getElementById('app');
+  const title = document.getElementById('page-title');
 
-function endPress(id) {
-  clearTimeout(pressTimer);
-  if (!isLongPress) {
-    // Click normal: Marcar o agregar repetida
-    if (!state[id] || !state[id].owned) {
-      toggleOwned(id);
-    } else {
-      updateDup(id, 1);
+  if (currentView === 'sections' && !currentSection) {
+    title.textContent = 'Mi Álbum Panini 2026';
+    const groups = sectionsList();
+    app.innerHTML = Object.keys(groups).map(name => {
+      const st = stats(groups[name]);
+      const p = st.total ? (st.owned/st.total*100) : 0;
+      return `<div class="section-card" onclick="openSection('${name.replace(/'/g,"\\'")}')">
+        <div>
+          <div class="section-name">${name}</div>
+          <div class="section-count">${st.owned} / ${st.total}</div>
+          <div class="mini-bar"><div class="mini-fill" style="width:${p}%"></div></div>
+        </div>
+        <div style="font-size:20px;opacity:.5;">›</div>
+      </div>`;
+    }).join('');
+  }
+
+  else if (currentView === 'sections' && currentSection) {
+    title.textContent = currentSection;
+    const items = sectionsList()[currentSection] || [];
+    app.innerHTML = `
+      <button class="back-btn" onclick="currentSection=null;render()">‹ Volver</button>
+      <div class="grid">
+        ${items.map(s => stickerCard(s)).join('')}
+      </div>`;
+  }
+
+  else if (currentView === 'missing') {
+    title.textContent = 'Me Faltan';
+    const missing = STICKERS.filter(s => !get(s.id).owned);
+    app.innerHTML = missing.length
+      ? `<div class="progress-text" style="margin-bottom:10px">${missing.length} estampas faltantes</div>
+         <div class="grid">${missing.map(s => stickerCard(s)).join('')}</div>`
+      : `<div class="empty">¡Completaste el álbum! 🎉</div>`;
+  }
+
+  else if (currentView === 'trade') {
+    title.textContent = 'Mis Repetidas';
+    const dups = STICKERS.filter(s => (get(s.id).dup||0) > 0);
+    app.innerHTML = dups.length
+      ? `<div class="progress-text" style="margin-bottom:10px">${dups.length} estampas para cambiar</div>
+         <div class="trade-list">
+           ${dups.map(s => {
+             const g = get(s.id);
+             return `<div class="trade-item" onclick="openModal('${s.id}')">
+               <div><b>${s.number}</b> ${s.name}<br><small style="opacity:.6">${s.section}</small></div>
+               <div style="color:#ff6b35;font-weight:700">×${g.dup}</div>
+             </div>`;
+           }).join('')}
+         </div>`
+      : `<div class="empty">No tienes repetidas registradas</div>`;
+  }
+
+  else if (currentView === 'share') {
+    title.textContent = 'Compartir';
+    const dups = STICKERS.filter(s => (get(s.id).dup||0) > 0);
+    const missing = STICKERS.filter(s => !get(s.id).owned);
+    let txt = `📕 Álbum Panini 2026 — ${total.owned}/${total.total}\n\n`;
+    if (dups.length) {
+      txt += `🔄 CAMBIO (${dups.length}):\n`;
+      txt += dups.map(s => `${s.number}${(get(s.id).dup>1?` x${get(s.id).dup}`:'')}`).join(', ') + '\n\n';
     }
-    render();
+    if (missing.length) {
+      txt += `🔍 BUSCO (${missing.length}):\n`;
+      txt += missing.slice(0,80).map(s => s.number).join(', ');
+      if (missing.length>80) txt += `... y ${missing.length-80} más`;
+    }
+    app.innerHTML = `
+      <p style="font-size:13px;opacity:.8">Copia el texto y compártelo por WhatsApp, Telegram, etc.</p>
+      <textarea id="shareTxt" readonly>${txt}</textarea>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="copyShare()">📋 Copiar al portapapeles</button>
+      <button class="btn btn-secondary" style="margin-top:8px" onclick="shareNative()">📤 Compartir...</button>
+      <hr style="margin:20px 0;border-color:rgba(255,255,255,.1)">
+      <h3 style="font-size:14px">Respaldo de progreso</h3>
+      <p style="font-size:12px;opacity:.7">Exporta para guardar o pasar a otro dispositivo</p>
+      <button class="btn btn-secondary" onclick="exportData()">💾 Exportar datos</button>
+      <button class="btn btn-secondary" style="margin-top:8px" onclick="importData()">📥 Importar datos</button>
+      <button class="btn btn-secondary" style="margin-top:8px;background:rgba(255,80,80,.2)" onclick="resetAll()">🗑️ Borrar todo</button>
+    `;
   }
 }
 
-function openLongPressMenu(id) {
+function stickerCard(s) {
+  const g = get(s.id);
+  const cls = 'sticker' + (g.owned?' owned':'') + (s.foil?' foil':'');
+  const dup = g.dup>0 ? `<span class="dup">×${g.dup}</span>` : '';
+  return `<div class="${cls}"
+    onpointerdown="startStickerPress(event, '${s.id}')"
+    onpointerup="endStickerPress(event, '${s.id}')"
+    onpointerleave="cancelStickerPress()"
+    onpointercancel="cancelStickerPress()"
+    oncontextmenu="return false">
+    <div class="num">${s.number}</div>
+    <div class="nm">${s.name}</div>
+    ${dup}
+  </div>`;
+}
+
+function openSection(name) { currentSection = name; render(); }
+
+function startStickerPress(event, id) {
+  event.preventDefault();
+  longPressTriggered = false;
+  clearTimeout(longPressTimer);
+
+  longPressTimer = setTimeout(() => {
+    longPressTriggered = true;
+    openModal(id);
+  }, 600);
+}
+
+function endStickerPress(event, id) {
+  event.preventDefault();
+  clearTimeout(longPressTimer);
+
+  if (longPressTriggered) return;
+
+  addSticker(id);
+}
+
+function cancelStickerPress() {
+  clearTimeout(longPressTimer);
+}
+
+function addSticker(id) {
+  const g = get(id);
+
+  if (!g.owned) {
+    set(id, { owned: true, dup: 0 });
+    return;
+  }
+
+  set(id, { owned: true, dup: (g.dup || 0) + 1 });
+}
+
+function openModal(id) {
   const s = STICKERS.find(x => x.id === id);
-  const data = state[id] || { owned: false, dups: 0 };
-  const content = document.getElementById('modalContent');
-  
-  content.innerHTML = `
-    <button class="back-btn" onclick="closeModal()">✕ Cerrar</button>
-    <h2>${s.number} - ${s.name}</h2>
-    <p class="sub">${s.section}</p>
+  const g = get(id);
+  document.getElementById('modalContent').innerHTML = `
+    <h2>${s.number} — ${s.name}</h2>
+    <div class="sub">${s.section}${s.foil?' · ⭐ Foil':''}</div>
+
     <div class="dup-row">
-      <span>Repetidas:</span>
-      <div style="display:flex; align-items:center; gap:15px;">
-        <button class="dup-btn" onclick="updateDup('${id}', -1); openLongPressMenu('${id}')" style="background:#ff6b35">-</button>
-        <span class="dup-count">${data.dups || 0}</span>
-        <button class="dup-btn" onclick="updateDup('${id}', 1); openLongPressMenu('${id}')">+</button>
+      <span>Repetidas</span>
+      <div style="display:flex;align-items:center;gap:14px">
+        <button class="dup-btn" onclick="changeDup('${id}',-1)">−</button>
+        <span class="dup-count">${g.dup||0}</span>
+        <button class="dup-btn" onclick="changeDup('${id}',1)">+</button>
       </div>
     </div>
-    <button class="btn-secondary" onclick="toggleOwned('${id}'); closeModal(); render();">
-      ${data.owned ? 'Quitar de mi álbum' : 'Marcar como tenida'}
-    </button>
+
+    ${g.dup > 0 ? `
+      <button class="btn btn-secondary" style="margin-top:14px;background:rgba(255,107,53,.25)" onclick="removeAllDup('${id}')">
+        Quitar todas las repetidas
+      </button>
+    ` : ''}
+
+    ${g.owned ? `
+      <button class="btn btn-secondary" style="margin-top:8px;background:rgba(255,80,80,.2)" onclick="removeSticker('${id}')">
+        Quitar del álbum
+      </button>
+    ` : ''}
+
+    <button class="btn btn-secondary" style="margin-top:14px" onclick="closeModal()">Cerrar</button>
   `;
   document.getElementById('modal').classList.add('show');
 }
 
-function closeModal() { document.getElementById('modal').classList.remove('show'); 
-  renderGrid()
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+
+function toggleOwn(id) {
+  const g = get(id);
+  set(id, { owned: !g.owned, dup: 0 });
+  openModal(id);
 }
 
-// --------- Renderizado ---------
-function render() {
-  const app = document.getElementById('app');
-  app.innerHTML = '';
-  
-  // Actualizar Progreso Global
-  const total = STICKERS.length;
-  const owned = STICKERS.filter(s => state[s.id]?.owned).length;
-  document.getElementById('totalFill').style.width = (owned/total*100) + '%';
-  document.getElementById('totalText').innerText = `${owned} / ${total} (${Math.round(owned/total*100)}%)`;
+function changeDup(id, delta) {
+  const g = get(id);
+  const newDup = Math.max(0, (g.dup||0)+delta);
+  set(id, { owned: true, dup: newDup });
+  openModal(id);
+}
 
-  if (currentView === 'sections') {
-    if (currentSection) renderGrid();
-    else renderSections();
-  } else if (currentView === 'trade') {
-    renderTrade();
-  } else if (currentView === 'missing') {
-    renderMissing();
-  } else if (currentView === 'share') {
-    renderShare();
+function removeAllDup(id) {
+  set(id, { owned: true, dup: 0 });
+  openModal(id);
+}
+
+function removeSticker(id) {
+  if (confirm('¿Quitar esta estampa del álbum y borrar sus repetidas?')) {
+    set(id, { owned: false, dup: 0 });
+    closeModal();
   }
 }
 
-function renderSections() {
-  const sections = [...new Set(STICKERS.map(s => s.section))];
-  sections.forEach(sec => {
-    const sList = STICKERS.filter(s => s.section === sec);
-    const owned = sList.filter(s => state[s.id]?.owned).length;
-    const card = document.createElement('div');
-    card.className = 'section-card';
-    card.onclick = () => { currentSection = sec; render(); };
-    card.innerHTML = `
-      <div>
-        <div class="section-name">${sec}</div>
-        <div class="mini-bar"><div class="mini-fill" style="width:${owned/sList.length*100}%"></div></div>
-      </div>
-      <div class="section-count">${owned}/${sList.length}</div>
-    `;
-    document.getElementById('app').appendChild(card);
-  });
-}
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') closeModal();
+});
 
-function renderGrid() {
-  const app = document.getElementById('app');
-  app.innerHTML = `<button class="back-btn" onclick="currentSection=null; render()">← Volver</button><h3>${currentSection}</h3>`;
-  const grid = document.createElement('div');
-  grid.className = 'grid';
-  
-  STICKERS.filter(s => s.section === currentSection).forEach(s => {
-    const data = state[s.id] || { owned: false, dups: 0 };
-    const div = document.createElement('div');
-    div.className = `sticker ${data.owned ? 'owned' : ''} ${s.foil ? 'foil' : ''}`;
-    
-    // Eventos de Gesto
-    div.onmousedown = () => startPress(s.id);
-    div.onmouseup = () => endPress(s.id);
-    div.ontouchstart = (e) => { e.preventDefault(); startPress(s.id); };
-    div.ontouchend = (e) => { e.preventDefault(); endPress(s.id); };
-
-    div.innerHTML = `
-      <div class="num">${s.number}</div>
-      <div class="nm">${s.name}</div>
-      ${data.dups > 0 ? `<div class="dup">${data.dups}</div>` : ''}
-    `;
-    grid.appendChild(div);
-  });
-  app.appendChild(grid);
-}
-
-function renderTrade() {
-  const app = document.getElementById('app');
-  app.innerHTML = '<h3>Mis Repetidas</h3>';
-  const trades = STICKERS.filter(s => state[s.id]?.dups > 0);
-  if (trades.length === 0) {
-    app.innerHTML += '<div class="empty">No tienes repetidas aún.</div>';
-    return;
-  }
-  trades.forEach(s => {
-    const item = document.createElement('div');
-    item.className = 'trade-item';
-    item.innerHTML = `<span><b>${s.number}</b> ${s.name}</span> <span>x${state[s.id].dups}</span>`;
-    app.appendChild(item);
-  });
-}
-
-function renderMissing() {
-  const app = document.getElementById('app');
-  app.innerHTML = '<h3>Me Faltan</h3>';
-  const missing = STICKERS.filter(s => !state[s.id]?.owned);
-  missing.forEach(s => {
-    const item = document.createElement('div');
-    item.className = 'trade-item';
-    item.innerHTML = `<span><b>${s.number}</b> ${s.name}</span> <span style="opacity:0.5">${s.section}</span>`;
-    app.appendChild(item);
-  });
-}
-
-function renderShare() {
-  const app = document.getElementById('app');
-  const missing = STICKERS.filter(s => !state[s.id]?.owned).map(s => s.number).join(', ');
-  const trades = STICKERS.filter(s => state[s.id]?.dups > 0).map(s => `${s.number}(x${state[s.id].dups})`).join(', ');
-  
-  app.innerHTML = `
-    <h3>Compartir</h3>
-    <p style="font-size:12px; opacity:0.7">Copia este texto para enviarlo por WhatsApp:</p>
-    <textarea readonly id="shareTxt">PANINI 2026\n\nFALTAN:\n${missing || '¡Ninguna!'}\n\nREPETIDAS:\n${trades || 'Ninguna'}</textarea>
-    <button class="btn btn-secondary" onclick="copyShare()" style="margin-top:10px">Copiar Texto</button>
-  `;
-}
-
+// --------- Compartir ---------
 function copyShare() {
   const t = document.getElementById('shareTxt');
   t.select(); document.execCommand('copy');
-  alert('¡Copiado al portapapeles!');
+  alert('Copiado!');
+}
+function shareNative() {
+  const text = document.getElementById('shareTxt').value;
+  if (navigator.share) navigator.share({ text });
+  else copyShare();
+}
+function exportData() {
+  const blob = new Blob([JSON.stringify(state)], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `panini-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    const r = new FileReader();
+    r.onload = () => {
+      try { state = JSON.parse(r.result); save(); render(); alert('Datos importados'); }
+      catch(err) { alert('Archivo inválido'); }
+    };
+    r.readAsText(file);
+  };
+  input.click();
+}
+function resetAll() {
+  if (confirm('¿Borrar TODO el progreso? No se puede deshacer.')) {
+    state = {}; save(); render();
+  }
 }
 
-// Navegación
+// --------- Nav ---------
 document.querySelectorAll('nav button').forEach(b => {
   b.onclick = () => {
-    document.querySelector('nav button.active').classList.remove('active');
+    document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
     currentView = b.dataset.view;
     currentSection = null;
