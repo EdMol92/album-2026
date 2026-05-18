@@ -122,6 +122,28 @@
   }
   .chip.active { background: #00d26a; color: #06173a; }
 
+  .search-box {
+    width: 100%;
+    background: #06173a;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 10px;
+    padding: 12px;
+    font-family: inherit;
+    font-size: 15px;
+    margin-bottom: 10px;
+    outline: none;
+  }
+  .search-box:focus {
+    border-color: #00d26a;
+    box-shadow: 0 0 0 2px rgba(0,210,106,.18);
+  }
+  .search-result-info {
+    font-size: 13px;
+    opacity: .8;
+    margin-bottom: 10px;
+  }
+
   .trade-list { margin-top: 10px; }
   .trade-item {
     background: #142c5e; padding: 10px; border-radius: 8px;
@@ -149,6 +171,7 @@
 
 <nav>
   <button data-view="sections" class="active"><span class="ico">📚</span>Álbum</button>
+  <button data-view="search"><span class="ico">🔎</span>Buscar</button>
   <button data-view="missing"><span class="ico">🔍</span>Faltan</button>
   <button data-view="trade"><span class="ico">🔄</span>Repetidas</button>
   <button data-view="share"><span class="ico">📤</span>Compartir</button>
@@ -7674,6 +7697,7 @@ const STORAGE_KEY = 'panini2026';
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
 let currentView = 'sections';
 let currentSection = null;
+let searchQuery = '';
 let longPressTimer = null;
 let longPressTriggered = false;
 
@@ -7694,6 +7718,27 @@ function stats(items) {
   let owned = 0, dup = 0;
   items.forEach(s => { const g = get(s.id); if (g.owned) owned++; dup += g.dup||0; });
   return { owned, total: items.length, dup };
+}
+
+function normalizeText(value) {
+  return String(value || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
+}
+
+function searchStickers(query) {
+  const q = normalizeText(query).trim();
+
+  if (!q) return [];
+
+  return STICKERS.filter(s => {
+    const number = normalizeText(s.number);
+    const name = normalizeText(s.name);
+    const section = normalizeText(s.section);
+
+    return number.includes(q) || name.includes(q) || section.includes(q);
+  });
 }
 
 // --------- Render ---------
@@ -7722,6 +7767,43 @@ function render() {
         <div style="font-size:20px;opacity:.5;">›</div>
       </div>`;
     }).join('');
+  }
+
+  else if (currentView === 'search') {
+    title.textContent = 'Buscar stickers';
+    const results = searchStickers(searchQuery);
+
+    app.innerHTML = `
+      <input
+        id="searchInput"
+        class="search-box"
+        type="search"
+        placeholder="Buscar por número o nombre: MEX1, Messi, Emblem..."
+        value="${searchQuery.replace(/"/g, '&quot;')}"
+        oninput="searchQuery=this.value;render()"
+        autocomplete="off"
+      >
+
+      ${
+            searchQuery.trim()
+                    ? `<div class="search-result-info">${results.length} resultado${results.length === 1 ? '' : 's'}</div>`
+                    : `<div class="search-result-info">Escribe el número o nombre del sticker</div>`
+    }
+
+      ${
+            searchQuery.trim()
+                    ? results.length
+                            ? `<div class="grid">${results.map(s => stickerCard(s)).join('')}</div>`
+                            : `<div class="empty">No encontré stickers con esa búsqueda</div>`
+                    : `<div class="empty">Ejemplos: MEX1, MEX10, Messi, Raúl, Team Photo</div>`
+    }
+    `;
+
+    const input = document.getElementById('searchInput');
+    if (input) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
   }
 
   else if (currentView === 'sections' && currentSection) {
