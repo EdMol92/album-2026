@@ -7955,9 +7955,31 @@ function openModal(id) {
     <button class="btn btn-secondary" style="margin-top:14px" onclick="closeModal()">Cerrar</button>
   `;
   document.getElementById('modal').classList.add('show');
+
+  if (!history.state || !history.state.modalOpen) {
+    history.pushState({ modalOpen: true }, '');
+  }
 }
 
-function closeModal() { document.getElementById('modal').classList.remove('show'); }
+function closeModal(skipHistoryBack = false) {
+  const modal = document.getElementById('modal');
+
+  if (!modal.classList.contains('show')) return;
+
+  modal.classList.remove('show');
+
+  if (!skipHistoryBack && history.state && history.state.modalOpen) {
+    history.back();
+  }
+}
+
+window.addEventListener('popstate', () => {
+  const modal = document.getElementById('modal');
+
+  if (modal.classList.contains('show')) {
+    closeModal(true);
+  }
+});
 
 function toggleOwn(id) {
   const g = get(id);
